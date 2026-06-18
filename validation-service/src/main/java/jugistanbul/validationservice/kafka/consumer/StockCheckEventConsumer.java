@@ -1,6 +1,6 @@
 package jugistanbul.validationservice.kafka.consumer;
 
-import jugistanbul.deserializer.CustomDeserializer;
+import jugistanbul.deserializer.EventObjectDeserializer;
 import jugistanbul.entity.EventObject;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -35,7 +35,7 @@ public class StockCheckEventConsumer
 
         final Consumer<Integer, EventObject> consumer = new KafkaConsumer<>(props,
                 new IntegerDeserializer(),
-                new CustomDeserializer<EventObject>(EventObject.class));
+                new EventObjectDeserializer());
 
         consumer.subscribe(Collections.singletonList("STOCK_CHECK_EVENT_TOPIC"));
         return consumer;

@@ -11,30 +11,32 @@
 
     <url>https://github.com/hakdogan/kafka-with-microservices</url>
 
-    <developers>
-        <developer>
-            <name>Huseyin Akdogan</name>
-            <email>hakdogan@kodcu.com</email>
-            <organization>Istanbul JUG</organization>
-        </developer>
-    </developers>
-
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <difc.kafka.clients.jar>${maven.multiModuleProjectDirectory}/../difc-for-kafka/security/policy-agent/signed-jars/kafka-clients-4.0.0.jar</difc.kafka.clients.jar>
+        <difc.kafka.streams.jar>${maven.multiModuleProjectDirectory}/../difc-for-kafka/security/policy-agent/signed-jars/kafka-streams-4.0.0.jar</difc.kafka.streams.jar>
     </properties>
 
     <modules>
+        <module>serde</module>
+        <module>difc-support</module>
         <module>order-service</module>
         <module>stock-service</module>
         <module>validation-service</module>
         <module>payment-service</module>
-        <module>serde</module>
     </modules>
 
     <dependencies>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>4.0.0</version>
+            <scope>system</scope>
+            <systemPath>${difc.kafka.clients.jar}</systemPath>
+        </dependency>
         <dependency>
             <groupId>jakarta.platform</groupId>
             <artifactId>jakarta.jakartaee-api</artifactId>
@@ -44,23 +46,18 @@
         <dependency>
             <groupId>io.openliberty</groupId>
             <artifactId>openliberty-runtime</artifactId>
-            <version>20.0.0.8</version>
+            <version>23.0.0.6</version>
             <type>zip</type>
-         </dependency>
-        <dependency>
-            <groupId>org.apache.kafka</groupId>
-            <artifactId>kafka-clients</artifactId>
-            <version>2.4.1</version>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
-            <version>2.0.0-alpha1</version>
+            <version>2.0.9</version>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-log4j12</artifactId>
-            <version>2.0.0-alpha1</version>
+            <version>2.0.9</version>
         </dependency>
     </dependencies>
 
@@ -69,9 +66,8 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.8.1</version>
+                <version>3.11.0</version>
             </plugin>
         </plugins>
     </build>
-
 </project>

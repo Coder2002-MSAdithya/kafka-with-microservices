@@ -16,8 +16,20 @@
 
     <dependencies>
         <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>4.0.0</version>
+            <scope>system</scope>
+            <systemPath>${difc.kafka.clients.jar}</systemPath>
+        </dependency>
+        <dependency>
             <groupId>jugistanbul</groupId>
             <artifactId>serde</artifactId>
+            <version>v1</version>
+        </dependency>
+        <dependency>
+            <groupId>jugistanbul</groupId>
+            <artifactId>difc-support</artifactId>
             <version>v1</version>
         </dependency>
     </dependencies>
@@ -36,6 +48,7 @@
                             <goal>shade</goal>
                         </goals>
                         <configuration>
+                            <includeSystemScope>true</includeSystemScope>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <manifestEntries>
@@ -43,8 +56,6 @@
                                     </manifestEntries>
                                 </transformer>
                             </transformers>
-                            <artifactSet>
-                            </artifactSet>
                             <outputFile>${project.build.directory}/stockservice.jar</outputFile>
                         </configuration>
                     </execution>

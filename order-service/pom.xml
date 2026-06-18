@@ -25,15 +25,52 @@
             <artifactId>serde</artifactId>
             <version>v1</version>
         </dependency>
+        <dependency>
+            <groupId>jugistanbul</groupId>
+            <artifactId>difc-support</artifactId>
+            <version>v1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>4.0.0</version>
+            <scope>system</scope>
+            <systemPath>${difc.kafka.clients.jar}</systemPath>
+        </dependency>
     </dependencies>
 
     <build>
         <finalName>${project.artifactId}</finalName>
         <plugins>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>copy-difc-kafka-clients</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <mkdir dir="${project.build.directory}/${project.build.finalName}/WEB-INF/lib"/>
+                                <copy file="${difc.kafka.clients.jar}"
+                                      tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/kafka-clients-4.0.0.jar"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
                 <groupId>io.openliberty.tools</groupId>
                 <artifactId>liberty-maven-plugin</artifactId>
                 <version>3.2</version>
+                <configuration>
+                    <looseApplication>false</looseApplication>
+                    <serverStartTimeout>180</serverStartTimeout>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

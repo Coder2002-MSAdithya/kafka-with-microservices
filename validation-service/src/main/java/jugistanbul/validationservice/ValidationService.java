@@ -1,88 +1,138 @@
 package jugistanbul.validationservice;
 
+import jugistanbul.difc.DifcConstants;
+import jugistanbul.difc.DifcGrantorBootstrap;
+import jugistanbul.difc.DifcRequester;
+import jugistanbul.difc.KafkaClientConfig;
 import jugistanbul.entity.EventObject;
-import jugistanbul.validationservice.kafka.consumer.StockCheckEventConsumer;
-import jugistanbul.validationservice.kafka.producer.ValidationEventProducer;
-import org.apache.kafka.clients.consumer.Consumer;
+import jugistanbul.entity.EventProjections;
+import jugistanbul.serializer.EventObjectSerializer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.kafka.common.KafkaException;
-import org.apache.kafka.common.errors.ProducerFencedException;
+import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
-import java.util.concurrent.ExecutionException;
+import java.util.Set;
 
-/**
- * @author hakdogan (hakdogan@kodcu.com)
- * Created on 17.08.2020
- **/
+public final class ValidationService {
 
-public class ValidationService {
     private static final Logger LOGGER = LoggerFactory.getLogger(ValidationService.class);
-    private static final Consumer<Integer, EventObject> consumer = StockCheckEventConsumer.build();
-    private static final Producer<Integer, EventObject> producer = ValidationEventProducer.build();
 
-    public static void main(String[] args) {
+    private ValidationService() {
+    }
 
-        ConsumerRecords<Integer, EventObject> records;
-        try {
-            EventObject event;
+    public static void main(final String[] args) {
+        final String password = KafkaClientConfig.passwordFor(DifcConstants.PRINCIPAL_VALIDATION);
+        try (DifcGrantorBootstrap grantor = DifcGrantorBootstrap.start(
+                     LOGGER,
+                     DifcConstants.SERVICE_VALIDATION,
+                     DifcConstants.PRINCIPAL_VALIDATION,
+                     password,
+                     DifcConstants.TAG_VALIDATION);
+             KafkaConsumer<Integer, EventObject> consumer = new KafkaConsumer<>(
+                KafkaClientConfig.consumerPropsForEventObject(
+                        DifcConstants.PRINCIPAL_VALIDATION,
+                        password,
+                        "stockCheckEventConsumerGroup02"));
+             KafkaProducer<Integer, EventObject> producer = new KafkaProducer<>(
+                     KafkaClientConfig.producerProps(
+                             DifcConstants.PRINCIPAL_VALIDATION,
+                             password,
+                             IntegerSerializer.class.getName(),
+                             EventObjectSerializer.class.getName()))) {
+
+            bootstrapDifcRegister(consumer, producer);
+            consumer.subscribe(Set.of(DifcConstants.TOPIC_STOCK_CHECK));
+            producer.initTransactions();
+            bootstrapDifcComplete(consumer);
+            LOGGER.info("Validation service listening on {}", DifcConstants.TOPIC_STOCK_CHECK);
+
             while (true) {
-                records = consumer.poll(Duration.ofMillis(100));
-                for (ConsumerRecord<Integer, EventObject> record : records) {
-                    LOGGER.info("Consumed record in validation service method: Key {} Value {} " +
-                                    "Partition {} Offset {}", record.key(), record.value(),
-                            record.partition(), record.offset());
-
-                    event = record.value();
-                    if (event.isInStock()) {
-                        event.setNumberValid(isCardNumberValid(event.getCardNumber()));
-                        event.setEvent("validation");
-                        publishValidationEvent(event);
+                final ConsumerRecords<Integer, EventObject> records = consumer.poll(Duration.ofMillis(200));
+                for (final ConsumerRecord<Integer, EventObject> record : records) {
+                    final EventObject in = record.value();
+                    if (in == null) {
+                        LOGGER.warn(
+                                "Skipping null/undeserializable event partition={} offset={}",
+                                record.partition(),
+                                record.offset());
+                        continue;
                     }
+                    if (!in.isInStock()) {
+                        continue;
+                    }
+                    final boolean valid = isCardNumberValid(in.getCardNumber());
+                    LOGGER.info("Validated card for customer={} valid={}", in.getCustomerId(), valid);
+                    publishValidation(producer, in, valid);
                 }
                 consumer.commitSync();
             }
-        } catch (Exception ex) {
-            LOGGER.error("An exception was thrown in validation service", ex);
+        } catch (final Exception ex) {
+            LOGGER.error("Validation service failed", ex);
+            System.exit(1);
         }
+    }
+
+    private static void bootstrapDifcRegister(
+            final KafkaConsumer<Integer, EventObject> consumer,
+            final KafkaProducer<Integer, EventObject> producer) {
+        if (!KafkaClientConfig.difcEnabled()) {
+            return;
+        }
+        DifcRequester.registerClient(LOGGER, DifcConstants.SERVICE_VALIDATION, consumer);
+        DifcRequester.registerClient(LOGGER, DifcConstants.SERVICE_VALIDATION, producer);
+        DifcRequester.requestGrantCapAdd(
+                LOGGER, DifcConstants.SERVICE_VALIDATION, consumer, DifcConstants.TAG_STOCK);
+        DifcRequester.requestGrantCapAdd(
+                LOGGER, DifcConstants.SERVICE_VALIDATION, consumer, DifcConstants.TAG_CARD);
+    }
+
+    private static void bootstrapDifcComplete(final KafkaConsumer<Integer, EventObject> consumer) {
+        if (!KafkaClientConfig.difcEnabled()) {
+            return;
+        }
+        DifcRequester.completeCanRemoveGrant(
+                LOGGER, DifcConstants.SERVICE_VALIDATION, consumer, DifcConstants.TAG_STOCK);
+        DifcRequester.completeCanRemoveGrant(
+                LOGGER, DifcConstants.SERVICE_VALIDATION, consumer, DifcConstants.TAG_CARD);
+        LOGGER.info("[ValidationService] DIFC grants ready");
+        System.out.println("[ValidationService] DIFC grants ready");
     }
 
     private static boolean isCardNumberValid(final String cardNumber) {
+        if (cardNumber == null || cardNumber.isEmpty()) {
+            return false;
+        }
         try {
             Long.parseLong(cardNumber);
             return true;
-        } catch (NumberFormatException ex) {
+        } catch (final NumberFormatException ex) {
+            return false;
         }
-        return false;
     }
 
-    private static void publishValidationEvent(final EventObject event) {
-
+    private static void publishValidation(
+            final KafkaProducer<Integer, EventObject> producer,
+            final EventObject in,
+            final boolean numberValid) throws Exception {
+        final EventObject out = EventProjections.forValidation(in, numberValid);
         final ProducerRecord<Integer, EventObject> record =
-                new ProducerRecord<>("VALIDATION_EVENT_TOPIC", event.getCustomerId(), event);
-
-        try {
-            producer.beginTransaction();
-            final RecordMetadata metadata = producer.send(record).get();
-            producer.commitTransaction();
-            LOGGER.info("Validation event published to Kafka: Topic {} Partition {} Offset {}",
-                    metadata.topic(), metadata.partition(), metadata.offset());
-        } catch (InterruptedException e) {
-            LOGGER.error("An InterruptedException was thrown in publishValidationEvent method", e.getMessage());
-        } catch (ExecutionException e) {
-            LOGGER.error("An InterruptedException was thrown in publishValidationEvent method", e.getMessage());
-        } catch (ProducerFencedException e) {
-            LOGGER.error("An InterruptedException was thrown in publishValidationEvent method", e.getMessage());
-            producer.close();
-        } catch (KafkaException e) {
-            LOGGER.error("A KafkaException was thrown in publishValidationEvent method", e.getMessage());
-            producer.abortTransaction();
+                new ProducerRecord<>(DifcConstants.TOPIC_VALIDATION, out.getCustomerId(), out);
+        producer.beginTransaction();
+        if (KafkaClientConfig.difcEnabled()) {
+            producer.sendWithTags(
+                    record.declassifyTags(Set.of(DifcConstants.TAG_STOCK, DifcConstants.TAG_CARD)),
+                    Set.of(DifcConstants.TAG_VALIDATION),
+                    null).get();
+        } else {
+            producer.send(record).get();
         }
+        producer.commitTransaction();
+        LOGGER.info("Published validation customer={} valid={}", out.getCustomerId(), numberValid);
     }
 }
